@@ -7,6 +7,7 @@ the signal currently fires. The orchestrator owns the response mapping; these on
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import pairwise
 
 from .model import IterationMetrics, Thresholds
 
@@ -16,7 +17,7 @@ def no_progress(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
     if len(history) < t.no_progress:
         return False
     window = history[-t.no_progress :]
-    return all(b.pass_count <= a.pass_count for a, b in zip(window, window[1:], strict=False))
+    return all(b.pass_count <= a.pass_count for a, b in pairwise(window))
 
 
 def repeat_failure(history: Sequence[IterationMetrics], t: Thresholds) -> bool:

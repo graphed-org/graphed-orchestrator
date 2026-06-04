@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fakers import TOTAL, at_implementing, ev
 
-from graphed_orchestrator import Action, GateReport, Phase, Thresholds
+from graphed_orchestrator import Action, Budget, GateReport, Phase, Thresholds
 
 
 def test_steady_progress_reaches_done() -> None:
@@ -106,8 +106,6 @@ def test_flaky_gate_quarantined_then_pauses() -> None:
 
 def test_budget_exceeded_pauses_immediately() -> None:
     """Exceeding the iteration cap is an immediate circuit breaker (B.5 #6)."""
-    from graphed_orchestrator import Budget
-
     o = at_implementing(budget=Budget(iterations_cap=3))
     assert o.record_iteration(ev(0, pass_count=2)).action == Action.CONTINUE
     d = o.record_iteration(ev(3, pass_count=2))
