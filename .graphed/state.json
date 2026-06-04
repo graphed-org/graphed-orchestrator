@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "repo": "graphed-orchestrator",
+  "updated_at": "2026-06-04T15:08:26Z",
+  "scaffolding": {"claude_md": true, "readme": true, "m0_spine": false},
+  "note": "Cross-cutting per B.8. The B.8 faker suite must be green before this orchestrator may run ANY real milestone.",
+  "milestones": {
+    "M0": {
+      "title": "Repository spine (CI matrix A.5, packaging, tooling, Sphinx, CONTRIBUTING)",
+      "phase": "PENDING",
+      "freeze_tag": null,
+      "budget": {"iterations_cap": 8, "iteration_index": 0, "tokens_spent": 0, "wall_clock_s": 0},
+      "gates": {"frozen_tests": null, "coverage": null, "lint": null, "types": null, "determinism": null, "benchmark": null, "integrity_scan": null},
+      "metrics": {"pass_count": 0, "fail_set_hash": null, "tree_hash": null, "diff_lines": 0},
+      "reviewer": {"status": null, "reject_count": 0},
+      "attempts_log": null,
+      "incident": null,
+      "disputes": []
+    },
+    "ORCH": {
+      "title": "Deterministic orchestrator engine: state machine, gates (B.3), stall signals (B.5), escalation (B.7), integrity scan (B.6), B.8 faker suite",
+      "phase": "PENDING",
+      "freeze_tag": null,
+      "budget": {"iterations_cap": null, "iteration_index": 0, "tokens_spent": 0, "wall_clock_s": 0},
+      "gates": {"frozen_tests": null, "coverage": null, "lint": null, "types": null, "determinism": null, "benchmark": null, "integrity_scan": null},
+      "metrics": {"pass_count": 0, "fail_set_hash": null, "tree_hash": null, "diff_lines": 0},
+      "reviewer": {"status": null, "reject_count": 0},
+      "attempts_log": null,
+      "incident": null,
+      "disputes": []
+    }
+  }
+}
