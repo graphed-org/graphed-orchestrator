@@ -32,7 +32,7 @@
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "REVIEW",
+      "phase": "DONE",
       "reject_count": 0
     },
     "ORCH": {
@@ -67,11 +67,11 @@
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "REVIEW",
+      "phase": "DONE",
       "reject_count": 0
     }
   },
   "repo": "graphed-orchestrator",
   "schema_version": 1,
-  "updated_at": "2026-06-04T16:06:29Z"
+  "updated_at": "2026-06-04T16:15:40Z"
 }
