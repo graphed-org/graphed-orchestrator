@@ -38,6 +38,7 @@ jobs:
       - name: Pytest + coverage gate (>=90% line+branch)
         run: pytest --cov=graphed_orchestrator --cov-branch --cov-report=term-missing
       - name: Determinism gate (two identical runs)
+        shell: bash
         run: |
           pytest -q > run1.txt
           pytest -q > run2.txt
@@ -95,6 +96,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install Graphviz (for inheritance diagrams)
+        run: sudo apt-get update && sudo apt-get install -y graphviz
       - name: Build docs with warnings-as-errors
         run: |
           python -m pip install --upgrade pip
