@@ -45,7 +45,13 @@ def test_is_done(tmp_path: Path) -> None:
     o.review(
         approve=True,
         gates=GateReport(
-            frozen_tests=True, coverage=True, lint=True, types=True, determinism=True, integrity_scan=True
+            frozen_tests=True,
+            coverage=True,
+            lint=True,
+            types=True,
+            determinism=True,
+            integrity_scan=True,
+            ci=True,
         ),
     )
     assert is_done(o.record) is True

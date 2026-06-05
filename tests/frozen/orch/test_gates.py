@@ -57,13 +57,46 @@ def test_benchmark_na_does_not_block_all_green() -> None:
 
 def test_approve_only_on_green() -> None:
     green = GateReport(
-        frozen_tests=True, coverage=True, lint=True, types=True, determinism=True, integrity_scan=True
+        frozen_tests=True,
+        coverage=True,
+        lint=True,
+        types=True,
+        determinism=True,
+        integrity_scan=True,
+        ci=True,
     )
     red = GateReport(
         frozen_tests=True, coverage=False, lint=True, types=True, determinism=True, integrity_scan=True
     )
     assert can_record_approve(green) is True
     assert can_record_approve(red) is False
+
+
+def test_approve_requires_confirmed_ci() -> None:
+    # local gates all green but CI not yet confirmed (None == in_progress/unknown) -> NOT done-ready
+    local_green = GateReport(
+        frozen_tests=True,
+        coverage=True,
+        lint=True,
+        types=True,
+        determinism=True,
+        integrity_scan=True,
+        ci=None,
+    )
+    assert local_green.all_green is True  # the per-iteration advance gate is satisfied
+    assert local_green.done_ready is False  # but DONE is not, without confirmed CI
+    assert can_record_approve(local_green) is False
+    # an explicitly-failed CI also blocks DONE
+    failed_ci = GateReport(
+        frozen_tests=True,
+        coverage=True,
+        lint=True,
+        types=True,
+        determinism=True,
+        integrity_scan=True,
+        ci=False,
+    )
+    assert can_record_approve(failed_ci) is False
 
 
 def test_test_sanity_non_vacuity_and_determinism() -> None:

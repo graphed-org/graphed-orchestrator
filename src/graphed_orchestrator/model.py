@@ -113,10 +113,14 @@ class GateReport:
     determinism: bool | None = None
     benchmark: bool | None = None  # None => N/A (not blocking)
     integrity_scan: bool | None = None
+    # The A.5-matrix CI result for the *exact commit being marked DONE*. None => not yet confirmed
+    # (e.g. CI still in_progress) and therefore NOT green — DONE is refused until this is True.
+    ci: bool | None = None
 
     @property
     def all_green(self) -> bool:
-        """A reviewer APPROVE is permitted only when this is True (plan B.3 #4)."""
+        """The local (per-iteration) gates. Gates the IMPLEMENTING -> REVIEW advance; does NOT
+        include `ci`, which is only confirmable after the commit is pushed (see B.3 #4)."""
         blocking = (
             self.frozen_tests,
             self.coverage,
@@ -129,6 +133,11 @@ class GateReport:
             return False
         # benchmark may be N/A (None); only an explicit False blocks.
         return self.benchmark is not False
+
+    @property
+    def done_ready(self) -> bool:
+        """Recording DONE requires the local gates AND a confirmed-green CI for this commit."""
+        return self.all_green and self.ci is True
 
 
 @dataclass(frozen=True)

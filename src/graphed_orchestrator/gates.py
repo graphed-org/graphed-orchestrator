@@ -61,5 +61,7 @@ def evaluate_test_sanity(
 
 
 def can_record_approve(report: GateReport) -> bool:
-    """The orchestrator refuses to record an APPROVE while any gate is red (plan B.3 #4)."""
-    return report.all_green
+    """The orchestrator refuses to record DONE while any gate is red OR the commit's CI is not
+    confirmed green (plan B.3 #4). `in_progress`/unknown CI counts as not-green, so a milestone can
+    never be marked DONE off an un-finished CI run."""
+    return report.done_ready

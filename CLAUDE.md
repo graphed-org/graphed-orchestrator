@@ -47,6 +47,13 @@ so a paused run resumes exactly where it stopped.
 - **DETERMINISM**: identical input → byte-identical optimized graph / serialized plan across runs.
 - **REVIEW**: the orchestrator **refuses to record an APPROVE while any gate is red** (anti
   rubber-stamp). A reviewer APPROVE on red gates is itself an integrity violation.
+- **CI gate (`GateReport.ci`)**: recording **DONE** additionally requires a **confirmed-green CI for
+  the exact commit being marked** (`done_ready = all_green and ci is True`). An `in_progress`/queued/
+  unknown CI is **not** green, so a milestone can never be marked DONE off an unfinished run.
+  Approving while local gates are green but CI is unconfirmed is **not** an integrity incident — the
+  milestone simply stays in REVIEW with an `awaiting_ci` signal until CI is verified. `ci.py`
+  (`classify`/`is_ci_green`/`wait_for_ci`) computes this from `gh` for a specific SHA; the
+  `scripts/confirm_ci.py` CLI is the pure-Python way to block on the pinned commit (no shell loops).
 
 ## Iteration metrics + attempt log (§B.4)
 

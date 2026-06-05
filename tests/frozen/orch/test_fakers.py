@@ -16,7 +16,13 @@ def test_steady_progress_reaches_done() -> None:
     assert final.action == Action.ADVANCE
     assert o.phase == Phase.REVIEW
     green = GateReport(
-        frozen_tests=True, coverage=True, lint=True, types=True, determinism=True, integrity_scan=True
+        frozen_tests=True,
+        coverage=True,
+        lint=True,
+        types=True,
+        determinism=True,
+        integrity_scan=True,
+        ci=True,
     )
     decision = o.review(approve=True, gates=green)
     assert decision.action == Action.ADVANCE

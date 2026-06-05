@@ -9,7 +9,13 @@ from graphed_orchestrator import Action, GateReport, Orchestrator, Phase, PhaseE
 from graphed_orchestrator.gates import evaluate_test_sanity
 
 GREEN = GateReport(
-    frozen_tests=True, coverage=True, lint=True, types=True, determinism=True, integrity_scan=True
+    frozen_tests=True,
+    coverage=True,
+    lint=True,
+    types=True,
+    determinism=True,
+    integrity_scan=True,
+    ci=True,  # CI confirmed green for this commit (now required to record DONE)
 )
 RED = GateReport(
     frozen_tests=True, coverage=False, lint=True, types=True, determinism=True, integrity_scan=True

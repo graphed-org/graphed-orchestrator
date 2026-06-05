@@ -59,8 +59,9 @@ def _drive(
         benchmark_ok=None,
     )
     o.record_iteration(ev)
-    # REVIEW: only record APPROVE if every gate (incl. the CI-matrix gate) is genuinely green.
-    if o.phase.value == "REVIEW" and ci_confirmed:
+    # REVIEW: attempt APPROVE with the real CI verdict. The engine refuses DONE unless `ci` is True
+    # (a confirmed-green CI for THIS commit); `ci_confirmed=False` leaves it REVIEW-pending-CI.
+    if o.phase.value == "REVIEW":
         o.review(
             approve=True,
             gates=GateReport(
@@ -70,6 +71,7 @@ def _drive(
                 types=True,
                 determinism=True,
                 integrity_scan=True,
+                ci=ci_confirmed,
             ),
         )
     return o

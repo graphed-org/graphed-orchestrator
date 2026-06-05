@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from . import signals
-from .gates import can_record_approve, evaluate_iteration
+from .gates import evaluate_iteration
 from .integrity import Finding, scan_diff
 from .metrics import build_metrics
 from .model import (
@@ -160,11 +160,21 @@ class Orchestrator:
         """Reviewer verdict. APPROVE is only recordable when all gates are green (B.3 #4)."""
         self._require(Phase.REVIEW)
         if approve:
-            if not can_record_approve(gates):
-                # Reviewer approving on red gates is itself an integrity violation (B.3 #4).
+            if not gates.all_green:
+                # Reviewer approving on red LOCAL gates is itself an integrity violation (B.3 #4).
                 return self._pause("reviewer_approved_red_gates", incident=True)
+            if gates.ci is not True:
+                # Local gates are green but the A.5-matrix CI for THIS commit is not confirmed green
+                # (e.g. still in_progress). Do NOT record DONE — and this is not an integrity
+                # incident, just "not ready". Stay in REVIEW until CI is verified green.
+                return Decision(
+                    Action.CONTINUE,
+                    Phase.REVIEW,
+                    signals=("awaiting_ci",),
+                    reason="local gates green but CI not confirmed green for this commit; DONE refused",
+                )
             self.record.phase = Phase.DONE
-            return Decision(Action.ADVANCE, Phase.DONE, reason="reviewer APPROVE on green gates")
+            return Decision(Action.ADVANCE, Phase.DONE, reason="reviewer APPROVE; local gates + CI green")
 
         # REJECT: track convergence (B.5 #9).
         self.record.reject_count += 1
