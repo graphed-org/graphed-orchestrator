@@ -5,6 +5,8 @@ not-green (plan B.3 #4)."""
 
 from __future__ import annotations
 
+import subprocess
+
 from fakers import TOTAL, at_implementing, ev
 
 from graphed_orchestrator import (
@@ -136,3 +138,29 @@ def test_wait_for_ci_times_out_pending_without_marking_green() -> None:
     runs = [{"headSha": SHA, "status": "in_progress", "conclusion": None}]
     result = wait_for_ci("org/repo", SHA, query=lambda _r: runs, timeout_s=0.0, sleep=lambda _s: None)
     assert result is CiState.PENDING  # never green on timeout
+
+
+def test_wait_for_ci_tolerates_a_transient_gh_failure_then_succeeds() -> None:
+    # a `gh` blip right after a push (run not yet queryable) must not abort confirmation
+
+    calls = {"n": 0}
+
+    def flaky(_repo: str) -> list[dict[str, object]]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise subprocess.CalledProcessError(1, ["gh", "run", "list"])
+        return [{"headSha": SHA, "status": "completed", "conclusion": "success"}]
+
+    slept: list[float] = []
+    result = wait_for_ci("org/repo", SHA, query=flaky, poll_s=5.0, sleep=slept.append)
+    assert result is CiState.GREEN  # retried past the transient failure
+    assert calls["n"] == 2 and slept == [5.0]
+
+
+def test_wait_for_ci_never_green_if_gh_keeps_failing() -> None:
+
+    def always_fail(_repo: str) -> list[dict[str, object]]:
+        raise subprocess.CalledProcessError(1, ["gh"])
+
+    result = wait_for_ci("org/repo", SHA, query=always_fail, timeout_s=0.0, sleep=lambda _s: None)
+    assert result is CiState.PENDING  # cannot confirm -> not green (confirm_ci will refuse DONE)

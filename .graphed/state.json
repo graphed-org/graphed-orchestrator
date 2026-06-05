@@ -25,14 +25,14 @@
           "integrity_ok": true,
           "iteration_index": 0,
           "lint_ok": true,
-          "pass_count": 54,
+          "pass_count": 56,
           "tokens_spent": 0,
           "tree_hash": "local",
           "types_ok": true,
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "DONE",
+      "phase": "REVIEW",
       "reject_count": 0
     },
     "ORCH": {
@@ -60,18 +60,18 @@
           "integrity_ok": true,
           "iteration_index": 0,
           "lint_ok": true,
-          "pass_count": 54,
+          "pass_count": 56,
           "tokens_spent": 0,
           "tree_hash": "local",
           "types_ok": true,
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "DONE",
+      "phase": "REVIEW",
       "reject_count": 0
     }
   },
   "repo": "graphed-orchestrator",
   "schema_version": 1,
-  "updated_at": "2026-06-05T11:44:23Z"
+  "updated_at": "2026-06-05T16:31:55Z"
 }

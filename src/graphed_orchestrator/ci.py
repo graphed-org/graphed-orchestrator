@@ -81,7 +81,13 @@ def wait_for_ci(
     terminal CiState (GREEN / FAILED / MISSING) — never PENDING unless it timed out."""
     deadline = time.monotonic() + timeout_s
     while True:
-        state = ci_state(repo, sha, query=query)
+        try:
+            state = ci_state(repo, sha, query=query)
+        except subprocess.CalledProcessError:
+            # a transient `gh` failure (e.g. the run is not yet queryable right after a push, or a
+            # momentary API blip) must NOT abort confirmation or count as green — treat it as pending
+            # and keep polling until the run resolves or we time out.
+            state = CiState.PENDING
         if state is not CiState.PENDING or time.monotonic() >= deadline:
             return state
         sleep(poll_s)
