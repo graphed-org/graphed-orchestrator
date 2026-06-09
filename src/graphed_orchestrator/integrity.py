@@ -23,6 +23,11 @@ _SKIP_MARKERS = re.compile(
 )
 _TAUTOLOGY = re.compile(r"assert\s+(True|1\s*==\s*1|(\w+)\s*==\s*\2)\b")
 _STUB = re.compile(r"raise\s+NotImplementedError|todo!\(\)|unimplemented!\(\)")
+# bare-body stubs (B.6 lists `pass` alongside NotImplementedError/todo!): a def/fn whose entire
+# added body is `pass` or `...`
+_DEF = re.compile(r"\b(?:def|fn)\s+(\w+)\s*\(")
+_BARE_BODY = re.compile(r"^\s*(pass|\.\.\.)\s*(#.*)?$")
+_DOCISH = re.compile(r"^\s*(#|r?\"\"\"|r?''')")
 _TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore")
 _EXCEPT_PASS = re.compile(r"except[^\n:]*:\s*pass\b|except\b.*:\s*$")
 _UNSAFE = re.compile(r"\bunsafe\b")
@@ -130,6 +135,19 @@ def scan_diff(
         findings.append(Finding("type_ignore_flood", "<diff>", f"{type_ignore_count} '# type: ignore'"))
     if except_pass_count > except_pass_threshold:
         findings.append(Finding("except_pass_flood", "<diff>", f"{except_pass_count} 'except: pass'"))
+
+    # A named Implementation Target whose entire added body is `pass`/`...` (B.6 lists bare `pass`
+    # at the same severity as NotImplementedError; the line regex above cannot see bodies). Only
+    # named targets are scanned — a bare `pass` in helper/protocol code is legitimate.
+    for idx, add in enumerate(added):
+        m = _DEF.search(add.text)
+        if not m or m.group(1) not in targets:
+            continue
+        j = idx + 1
+        while j < len(added) and added[j].path == add.path and _DOCISH.match(added[j].text):
+            j += 1  # skip docstring/comment lines directly after the signature
+        if j < len(added) and added[j].path == add.path and _BARE_BODY.match(added[j].text):
+            findings.append(Finding("target_stubbed", add.path, f"{m.group(1)}: bare `pass`/`...` body"))
 
     return findings
 
