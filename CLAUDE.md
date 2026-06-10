@@ -119,3 +119,15 @@ that cannot detect a tampering faker in test must not be used to run real agents
 Per root §A.5: the full OS × arch × CPython {3.11–3.14, 3.14t} matrix; CI green + the §B.8 faker
 suite green are this repo's Definition of Done. Keep the orchestrator deterministic — no LLM calls
 in the gate/stall/escalation logic itself.
+
+## CI watching utilities
+
+Two complementary tools confirm remote CI for exact pinned commits (never a branch name):
+- **`scripts/confirm_ci.py`** (`ci.py: wait_for_ci`) — BLOCKING green/red verdict; what the DONE
+  gate uses.
+- **`scripts/watch_ci.py`** (`watch.py: watch`) — STREAMING form: one line per workflow run as it
+  reaches a terminal state (failure included — silence must never be mistakable for "still
+  running"), transient query errors reported, exit 0/1/2 = all-green/failures/timeout. Born from
+  a session monitor that failed silently because **zsh does not word-split unquoted parameters**
+  (`for spec in $specs` drove one malformed target into `2>/dev/null`); both tools are pure
+  Python so a shell can never re-split the targets.

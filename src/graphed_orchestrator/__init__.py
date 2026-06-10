@@ -24,6 +24,7 @@ from .model import (
     Thresholds,
 )
 from .orchestrator import Orchestrator, PhaseError
+from .watch import RunEvent, WatchResult, watch
 
 __all__ = [
     "Action",
@@ -39,8 +40,10 @@ __all__ = [
     "Orchestrator",
     "Phase",
     "PhaseError",
+    "RunEvent",
     "SanityReport",
     "Thresholds",
+    "WatchResult",
     "can_record_approve",
     "ci_state",
     "classify",
@@ -49,6 +52,7 @@ __all__ = [
     "is_ci_green",
     "scan_diff",
     "wait_for_ci",
+    "watch",
 ]
 
 __version__ = "0.0.1"
