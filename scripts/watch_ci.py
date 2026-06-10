@@ -11,7 +11,8 @@ Usage:
     python scripts/watch_ci.py ORG/repo=<sha> ORG/r2     # explicit shas; mix as needed
     python scripts/watch_ci.py --poll 30 --timeout 1800 ORG/repo=<sha>
 
-Exit status: 0 every run succeeded · 1 at least one run failed · 2 timed out while pending.
+Exit status: 0 every run succeeded · 1 at least one run failed · 2 timed out while pending ·
+3 a target's queries failed persistently (misspelled repo, revoked auth — check the emitted stderr).
 
 Like ``confirm_ci.py``, this exists because shell watch loops failed silently in practice (zsh
 does not word-split unquoted parameters, so a `for spec in $specs` loop drove ONE malformed
@@ -54,7 +55,12 @@ def main(argv: list[str] | None = None) -> int:
         poll_s=args.poll,
         timeout_s=args.timeout,
     )
-    return {WatchResult.ALL_GREEN: 0, WatchResult.FAILURES: 1, WatchResult.TIMEOUT: 2}[result]
+    return {
+        WatchResult.ALL_GREEN: 0,
+        WatchResult.FAILURES: 1,
+        WatchResult.TIMEOUT: 2,
+        WatchResult.QUERY_ERROR: 3,
+    }[result]
 
 
 if __name__ == "__main__":

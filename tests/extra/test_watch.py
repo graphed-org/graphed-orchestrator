@@ -98,6 +98,29 @@ def test_watch_covers_multiple_targets_and_branches() -> None:
     assert "org/r2/backup/x ci: success" in lines
 
 
+def test_persistent_query_failure_escalates_with_the_real_stderr() -> None:
+    # a misspelled repo name 404s forever; the watch must say WHY and stop, not retry to timeout
+    boom = subprocess.CalledProcessError(1, ["gh"])
+    boom.stderr = "GraphQL: Could not resolve to a Repository with the name 'org/nope'.\n"
+    lines: list[str] = []
+
+    def query(repo: str) -> Sequence[Mapping[str, object]]:
+        raise boom
+
+    result = watch(
+        [("org/nope", SHA_A)],
+        emit=lines.append,
+        query=query,
+        max_query_failures=3,
+        sleep=lambda s: None,
+        clock=lambda: 0.0,
+    )
+    assert result is WatchResult.QUERY_ERROR
+    assert "Could not resolve to a Repository" in lines[0]  # the stderr reaches the operator
+    assert lines[-1].startswith("WATCH_QUERY_ERROR: org/nope failed 3 consecutive queries")
+    assert len(lines) == 3
+
+
 def test_transient_query_failure_is_an_event_and_keeps_watching() -> None:
     boom = subprocess.CalledProcessError(1, ["gh"])
     polls = iter([boom, [_run("ci", SHA_A, "completed", "success")]])
@@ -117,7 +140,7 @@ def test_transient_query_failure_is_an_event_and_keeps_watching() -> None:
         clock=lambda: 0.0,
     )
     assert result is WatchResult.ALL_GREEN
-    assert any("query failed (transient" in line for line in lines)  # errors are NEVER silent
+    assert any("query failed (1/5, will retry)" in line for line in lines)  # errors are NEVER silent
 
 
 def test_watch_times_out_while_pending() -> None:

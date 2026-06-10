@@ -34,6 +34,7 @@ class WatchResult(StrEnum):
     ALL_GREEN = "all-green"  # every target settled, every run succeeded
     FAILURES = "failures"  # every target settled, at least one run did not succeed
     TIMEOUT = "timeout"  # targets still pending when the deadline passed
+    QUERY_ERROR = "query-error"  # a target's queries failed persistently (bad repo name, auth, ...)
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,13 @@ def pending_count(runs: Sequence[Mapping[str, object]], sha: str) -> int:
     return sum(1 for r in matched if str(r.get("status")) != "completed")
 
 
+def _error_detail(exc: subprocess.CalledProcessError) -> str:
+    """The gh stderr, not just the exit status — 'could not resolve to a Repository' must reach the
+    operator (a watcher that hid this once retried a misspelled repo name to its timeout)."""
+    stderr = (exc.stderr or "").strip() if isinstance(exc.stderr, str) else ""
+    return stderr.splitlines()[-1] if stderr else str(exc)
+
+
 def watch(
     targets: Iterable[tuple[str, str]],
     *,
@@ -109,13 +117,19 @@ def watch(
     query: QueryFn | None = None,
     poll_s: float = 60.0,
     timeout_s: float = 2700.0,
+    max_query_failures: int = 5,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> WatchResult:
     """Poll every (repo, sha) target, emitting each run's terminal line exactly once, until all
-    targets settle or the deadline passes. Returns the aggregate verdict."""
+    targets settle or the deadline passes. Returns the aggregate verdict.
+
+    ``max_query_failures`` CONSECUTIVE query failures for one target end the watch with
+    ``QUERY_ERROR``: a nonexistent repo or revoked auth never heals, and retrying it quietly to
+    the global timeout is one more way for a watcher to look alive while watching nothing."""
     target_list = list(targets)
     seen: set[RunEvent] = set()
+    failures: dict[str, int] = {}
     deadline = clock() + timeout_s
     while True:
         any_pending = False
@@ -123,10 +137,15 @@ def watch(
             try:
                 runs = query(repo) if query is not None else _gh_runs(repo)
             except subprocess.CalledProcessError as exc:
-                # a transient gh failure is an EVENT, not silence — and it keeps the watch alive
-                emit(f"{repo}: query failed (transient, will retry): {exc}")
+                failures[repo] = failures.get(repo, 0) + 1
+                detail = _error_detail(exc)
+                if failures[repo] >= max_query_failures:
+                    emit(f"WATCH_QUERY_ERROR: {repo} failed {failures[repo]} consecutive queries: {detail}")
+                    return WatchResult.QUERY_ERROR
+                emit(f"{repo}: query failed ({failures[repo]}/{max_query_failures}, will retry): {detail}")
                 any_pending = True
                 continue
+            failures[repo] = 0
             for event in terminal_events(repo, runs, sha):
                 if event not in seen:
                     seen.add(event)
