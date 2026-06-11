@@ -6,6 +6,8 @@ A state machine, **not** an LLM: it owns the milestone lifecycle, runs the mecha
 computes stall signals from git + CI evidence, and makes every escalation/pause decision. Agent
 self-reports are advisory only.
 
+Start with :doc:`design` for the engineering walkthrough.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents
