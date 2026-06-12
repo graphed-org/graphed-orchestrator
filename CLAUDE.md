@@ -131,3 +131,11 @@ Two complementary tools confirm remote CI for exact pinned commits (never a bran
   a session monitor that failed silently because **zsh does not word-split unquoted parameters**
   (`for spec in $specs` drove one malformed target into `2>/dev/null`); both tools are pure
   Python so a shell can never re-split the targets.
+
+## The pre-commit gate
+
+`python -m graphed_orchestrator.precommit [REPO] [--fast] [--allow-refreeze PREFIX]` — run it in
+ANY graphed repo BEFORE every commit (this is the scripted form of the session discipline: TOML/
+YAML validity, ruff+format, mypy, full pytest with zero-collected=fail, sphinx -W, and the
+integrity scan incl. untracked files, with the modify-vs-new frozen distinction and a loud
+sanctioned-refreeze path). Exit 0 = commit allowed.

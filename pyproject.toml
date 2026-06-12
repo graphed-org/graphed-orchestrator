@@ -55,3 +55,16 @@ ignore = ["E501"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["yaml.*"]
+ignore_missing_imports = true
+
+[tool.graphed_precommit]
+# the shape scanner's own source + the tests that test it contain the banned shapes by design
+integrity_exclude = [
+  "src/graphed_orchestrator/precommit.py",
+  "src/graphed_orchestrator/integrity.py",
+  "tests/extra/test_precommit_gate.py",
+  "tests/frozen",
+]

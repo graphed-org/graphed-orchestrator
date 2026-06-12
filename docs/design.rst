@@ -107,6 +107,22 @@ masked exit codes. Usage::
     python scripts/watch_ci.py --poll 60 --timeout 2700 \
         graphed-org/graphed-mvp=<sha> graphed-org/graphed-core-mvp=<sha>
 
+The pre-commit gate
+-------------------
+
+``python -m graphed_orchestrator.precommit [REPO]`` is the gate a working session runs before
+*any* commit, encoding validations that previously lived in (fallible) memory and shell chains:
+TOML/YAML parse checks on every config file (regex edits have shipped invalid TOML twice),
+ruff + format, mypy where configured, the full pytest run with zero-collected treated as
+failure, ``sphinx -W`` where docs exist — and the integrity scan over everything about to be
+committed, untracked files included. Exit status is collected per check, never piped, never
+chained. Three deliberate nuances: brand-new ``tests/frozen/`` suites are advisory (they are
+the test-authoring deliverable) while modifying an existing frozen file is a hard failure;
+``--allow-refreeze PREFIX`` sanctions a freeze amendment loudly (the dispute-correction path —
+re-tag required); and a repo may exclude named paths from the *shape* scan via
+``[tool.graphed_precommit] integrity_exclude`` (the scanner's own source contains the banned
+shapes), downgraded to visible advisories, never silenced.
+
 A worked decision
 -----------------
 
@@ -143,6 +159,7 @@ Module                            Responsibility
 ``orchestrator``                  The state machine that ties it together.
 ``store``                         Durable ``.graphed/state.json`` + ``attempts.md`` backing.
 ``watch`` / ``ci``                The streaming GitHub Actions watcher.
+``precommit``                     The pre-commit gate (below).
 ================================  ===========================================================
 
 Inheritance
