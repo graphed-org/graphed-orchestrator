@@ -16,6 +16,9 @@ from graphed_orchestrator.precommit import (
 
 def _git_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    # bare CI runners have no global git identity; the fixture repo carries its own
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "gate@test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "gate"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "root"], check=True)
     return tmp_path
 

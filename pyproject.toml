@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "coverage[toml]", "hypothesis", "mypy", "ruff"]
+dev = ["pytest", "pytest-cov", "coverage[toml]", "hypothesis", "mypy", "ruff", "pyyaml"]
 docs = ["sphinx", "furo"]
 
 [project.urls]
