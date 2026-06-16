@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 
 from graphed_orchestrator.precommit import (
+    _ci_coverage_cmd,
+    check_coverage,
     check_integrity,
     check_pytest,
     check_toml,
@@ -108,6 +110,88 @@ def test_exclusions_downgrade_shape_findings_to_advisory(tmp_path: Path) -> None
     result = check_integrity(repo)
     assert result.status == "ok"  # excluded -> not a hard failure
     assert "excluded:" in result.detail  # ... but VISIBLE, never silenced
+
+
+def _cov_workflow(repo: Path, cmd: str) -> None:
+    wf = repo / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "ci.yml").write_text(f"jobs:\n  test:\n    steps:\n      - name: cov\n        run: {cmd}\n")
+
+
+def _pkg_repo(tmp_path: Path, *, fully_covered: bool) -> Path:
+    """A minimal importable package + a coverage CI gate, covered fully or only half."""
+    repo = _git_repo(tmp_path)
+    (repo / "pyproject.toml").write_text(
+        "[tool.coverage.run]\nbranch = true\nsource = ['pkg']\n"
+        "[tool.coverage.report]\nfail_under = 90\nshow_missing = true\n"
+    )
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "__init__.py").write_text(
+        "def f(x):\n    if x > 0:\n        return 1\n    return 0\n\ndef g(x):\n    return x + 1\n"
+    )
+    body = "import pkg\n\ndef test_it():\n    assert pkg.f(1) == 1\n"
+    if fully_covered:
+        body += "    assert pkg.f(-1) == 0\n    assert pkg.g(2) == 3\n"
+    (repo / "test_pkg.py").write_text(body)
+    _cov_workflow(repo, "pytest --cov=pkg --cov-branch --cov-report=term-missing")
+    return repo
+
+
+def test_ci_coverage_cmd_extracted_from_workflow(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    _cov_workflow(repo, "pytest tests/frozen --cov=graphed_x --cov-branch --cov-report=term-missing")
+    cmd = _ci_coverage_cmd(repo)
+    assert cmd is not None
+    assert cmd[1:] == [
+        "-m",
+        "pytest",
+        "tests/frozen",
+        "--cov=graphed_x",
+        "--cov-branch",
+        "--cov-report=term-missing",
+    ]
+
+
+def test_ci_coverage_cmd_is_none_when_ci_has_no_cov_gate(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    _cov_workflow(repo, "pytest tests/frozen -p no:cacheprovider")  # a Rust pkg: no python --cov gate
+    assert _ci_coverage_cmd(repo) is None
+    assert _ci_coverage_cmd(_git_repo(tmp_path / "bare")) is None  # no workflows at all
+
+
+def test_ci_coverage_cmd_skips_compound_shell_lines(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    _cov_workflow(repo, "cd sub && pytest --cov=pkg")  # a chained line isn't a clean argv -> skip it
+    assert _ci_coverage_cmd(repo) is None
+
+
+def test_check_coverage_skipped_without_a_ci_gate(tmp_path: Path) -> None:
+    assert check_coverage(_git_repo(tmp_path)).status == "skipped"
+
+
+def test_check_coverage_fails_below_threshold(tmp_path: Path) -> None:
+    # the exact failure mode this exists for: tests pass but coverage misses the >=90% gate
+    result = check_coverage(_pkg_repo(tmp_path, fully_covered=False))
+    assert result.status == "FAIL"
+    assert "less than fail-under" in result.detail or "TOTAL" in result.detail
+
+
+def test_check_coverage_passes_when_fully_covered(tmp_path: Path) -> None:
+    assert check_coverage(_pkg_repo(tmp_path, fully_covered=True)).status == "ok"
+
+
+def test_run_gate_runs_the_coverage_gate_when_ci_has_one(tmp_path: Path) -> None:
+    results = {r.name: r for r in run_gate(_pkg_repo(tmp_path, fully_covered=True), docs=False, types=False)}
+    assert "coverage" in results and results["coverage"].status == "ok"
+    assert "pytest" not in results  # the coverage run executes the suite — no second, redundant run
+
+
+def test_run_gate_no_coverage_flag_falls_back_to_plain_pytest(tmp_path: Path) -> None:
+    results = {
+        r.name: r
+        for r in run_gate(_pkg_repo(tmp_path, fully_covered=False), docs=False, types=False, coverage=False)
+    }
+    assert "coverage" not in results and "pytest" in results  # --no-coverage -> plain suite, no cov gate
 
 
 def test_allow_refreeze_downgrades_named_frozen_edits_loudly(tmp_path: Path) -> None:

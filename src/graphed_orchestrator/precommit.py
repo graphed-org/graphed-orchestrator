@@ -10,11 +10,14 @@ manually-assembled shell chain:
 * **masked exit codes** (``mypy | tail`` makes the gate's status the pipe's);
 * commits touching ``tests/frozen/**`` or gate config (the integrity scan, reused from the
   iteration machinery, runs over the staged-plus-unstaged diff);
-* a green suite hiding a **collection error** or a vacuous run (zero collected = fail).
+* a green suite hiding a **collection error** or a vacuous run (zero collected = fail);
+* a suite that passes locally but **misses CI's >=90% coverage gate** (local pytest measured no
+  coverage, so an under-covered diff sailed through review and only went red in CI) — the gate now
+  runs the repo's OWN CI ``--cov`` command (read from its workflow, so it can never drift from CI).
 
 Usage::
 
-    python -m graphed_orchestrator.precommit [REPO_DIR] [--no-docs] [--no-types] [--fast]
+    python -m graphed_orchestrator.precommit [REPO_DIR] [--no-docs] [--no-types] [--fast] [--no-coverage]
 
 Exit 0 only when every applicable check passes. Checks that do not apply to a repo (no
 ``docs/``, no mypy config) are reported as skipped, never silently dropped.
@@ -23,6 +26,7 @@ Exit 0 only when every applicable check passes. Checks that do not apply to a re
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -166,6 +170,54 @@ def check_pytest(repo: Path) -> CheckResult:
     )
 
 
+def _ci_coverage_cmd(repo: Path) -> list[str] | None:
+    """The repo's OWN CI coverage command, read straight from its workflow, so the local gate runs
+    coverage EXACTLY as CI does and can never silently drift from it (the gap that let an 86% frozen
+    suite pass local checks yet fail CI's ``--cov`` gate). Returns the ``pytest ... --cov`` invocation
+    as argv — ``fail_under`` then comes from the repo's ``[tool.coverage.report]``, honored identically
+    — or ``None`` when CI has no Python coverage gate (e.g. a Rust package whose coverage is
+    ``cargo llvm-cov``, or the meta repo). Reading the workflow rather than hard-coding ``tests/frozen``
+    is deliberate: repos differ (most gate the frozen suite only; the orchestrator gates the whole
+    suite), and the workflow is the single source of truth for what CI will actually enforce."""
+    wf = repo / ".github" / "workflows"
+    if not wf.is_dir():
+        return None
+    for path in sorted(wf.glob("*.yml")) + sorted(wf.glob("*.yaml")):
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if line.startswith("- "):
+                line = line[2:].strip()
+            if line.startswith("run:"):
+                line = line[4:].strip()
+            if "pytest" not in line or "--cov" not in line:
+                continue
+            if any(sep in line for sep in ("&&", "|", ";")):
+                continue  # a compound shell line isn't a clean argv — skip rather than mis-split it
+            toks = shlex.split(line)
+            if "pytest" in toks:
+                return [sys.executable, "-m", *toks[toks.index("pytest") :]]
+    return None
+
+
+def check_coverage(repo: Path, *, cmd: list[str] | None = None) -> CheckResult:
+    """Run the repo's CI coverage command locally so the >=90% line+branch gate (plan §B.3) is caught
+    BEFORE the push, not discovered red in CI. A non-zero exit is either a test failure or a
+    ``fail_under`` miss — both must block the commit. ``skipped`` when the repo has no CI ``--cov``
+    gate, so the check is harmless to run anywhere."""
+    cmd = cmd if cmd is not None else _ci_coverage_cmd(repo)
+    if cmd is None:
+        return CheckResult("coverage", "skipped", "no pytest --cov gate in CI")
+    code, out = _run([*cmd, "-p", "no:cacheprovider"], repo)
+    if code == 5:  # the gated suite collected nothing — a vacuous "100%" is still a failure
+        return CheckResult("coverage", "FAIL", "no tests collected")
+    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    failmsg = next((ln for ln in lines if "Coverage failure" in ln), "")
+    total = next((ln for ln in reversed(lines) if ln.startswith("TOTAL")), "")
+    return CheckResult(
+        "coverage", "FAIL" if code else "ok", (failmsg or total or (lines[-1] if lines else ""))[:160]
+    )
+
+
 def check_docs(repo: Path) -> CheckResult:
     docs = repo / "docs"
     if not (docs / "conf.py").is_file():
@@ -183,6 +235,7 @@ def run_gate(
     docs: bool = True,
     types: bool = True,
     fast: bool = False,
+    coverage: bool = True,
     allow_refreeze: tuple[str, ...] = (),
 ) -> list[CheckResult]:
     checks = [
@@ -194,7 +247,11 @@ def run_gate(
     if types:
         checks.append(check_mypy(repo))
     if not fast:
-        checks.append(check_pytest(repo))
+        # When CI has a coverage gate, run THAT command — it executes the gated suite AND enforces
+        # >=90% in one pass, so we mirror CI exactly without running pytest twice. Otherwise (no CI
+        # --cov gate, or --no-coverage) fall back to the plain suite for correctness.
+        cov_cmd = _ci_coverage_cmd(repo) if coverage else None
+        checks.append(check_coverage(repo, cmd=cov_cmd) if cov_cmd is not None else check_pytest(repo))
         if docs:
             checks.append(check_docs(repo))
     return checks
@@ -206,6 +263,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-docs", action="store_true", help="skip the sphinx -W build")
     parser.add_argument("--no-types", action="store_true", help="skip mypy")
     parser.add_argument("--fast", action="store_true", help="static checks only (no pytest/docs)")
+    parser.add_argument(
+        "--no-coverage",
+        action="store_true",
+        help="run the plain test suite without CI's coverage gate (faster; not push-safe)",
+    )
     parser.add_argument(
         "--allow-refreeze",
         action="append",
@@ -221,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         docs=not ns.no_docs,
         types=not ns.no_types,
         fast=ns.fast,
+        coverage=not ns.no_coverage,
         allow_refreeze=tuple(ns.allow_refreeze),
     )
     width = max(len(r.name) for r in results)
