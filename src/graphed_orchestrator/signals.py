@@ -13,7 +13,7 @@ from .model import IterationMetrics, Thresholds
 
 
 def no_progress(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
-    """#1 pass_count not strictly increasing for `no_progress` consecutive iterations."""
+    """#1 pass_count not strictly increasing for ``no_progress`` consecutive iterations."""
     if len(history) < t.no_progress:
         return False
     window = history[-t.no_progress :]
@@ -21,7 +21,7 @@ def no_progress(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
 
 
 def repeat_failure(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
-    """#2 identical fail_set_hash for `repeat_failure` consecutive iterations."""
+    """#2 identical fail_set_hash for ``repeat_failure`` consecutive iterations."""
     if len(history) < t.repeat_failure:
         return False
     window = history[-t.repeat_failure :]
@@ -45,7 +45,7 @@ def oscillation(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
 
 
 def thrash(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
-    """#4 diff_lines over budget while pass_count flat or falling, for `thrash_iters` iters."""
+    """#4 diff_lines over budget while pass_count flat or falling, for ``thrash_iters`` iters."""
     if len(history) < max(t.thrash_iters + 1, 2):
         return False
     window = history[-t.thrash_iters :]
@@ -56,9 +56,9 @@ def thrash(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
 
 
 def gate_stuck(history: Sequence[IterationMetrics], t: Thresholds) -> bool:
-    """#5 functional tests green but coverage/benchmark/determinism red, for `gate_stuck` iters.
+    """#5 functional tests green but coverage/benchmark/determinism red, for ``gate_stuck`` iters.
 
-    `pass_count == total` cannot be read here (history has no total), so we use the convention
+    ``pass_count == total`` cannot be read here (history has no total), so we use the convention
     that the orchestrator records gate_stuck candidacy via coverage/determinism flags being red
     while the iteration otherwise made the suite pass (encoded by pass_count being maximal across
     the window and unchanging)."""

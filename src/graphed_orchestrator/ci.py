@@ -4,10 +4,10 @@ was marked DONE off a CI run for a different/earlier commit, while the pinned co
 
 The rule is strict and deterministic: a commit's CI is **green only when a run for that SHA has
 COMPLETED with conclusion ``success``**. ``in_progress`` / ``queued`` / no-run-found all count as
-NOT green, so DONE can never be recorded off an unfinished run. `wait_for_ci` polls until the SHA's
-run actually completes.
+NOT green, so DONE can never be recorded off an unfinished run. ``wait_for_ci`` polls until the
+SHA's run actually completes.
 
-The gh call is injected (`query`) so the logic is unit-testable without a network.
+The gh call is injected (``query``) so the logic is unit-testable without a network.
 """
 
 from __future__ import annotations

@@ -120,7 +120,7 @@ class GateReport:
     @property
     def all_green(self) -> bool:
         """The local (per-iteration) gates. Gates the IMPLEMENTING -> REVIEW advance; does NOT
-        include `ci`, which is only confirmable after the commit is pushed (see B.3 #4)."""
+        include ``ci``, which is only confirmable after the commit is pushed (see B.3 #4)."""
         blocking = (
             self.frozen_tests,
             self.coverage,

@@ -40,12 +40,16 @@ Evidence in, decision out
 
 Each implementer iteration produces an :class:`~graphed_orchestrator.IterationEvidence` —
 gate-by-gate results (frozen tests, diff coverage, lint, types, determinism, benchmark,
-integrity), derived :class:`~graphed_orchestrator.IterationMetrics` (pass counts, a hash of
-the failing-test set, coverage numbers), and the diff itself. ``evaluate_iteration(evidence,
-history, thresholds, budget)`` returns a :class:`~graphed_orchestrator.Decision`: continue,
-``RETRY_L0``, ``ESCALATE_L1``, or ``PAUSE``. The function is pure; feeding it the same
-evidence always yields the same decision — which is the property that makes the *process*
-auditable the same way the *code* is.
+integrity) plus the diff itself. ``Orchestrator.record_iteration(evidence, diff_text=...)``
+folds it in: it runs the integrity scan over the diff, evaluates the gates
+(:func:`~graphed_orchestrator.evaluate_iteration` builds the
+:class:`~graphed_orchestrator.GateReport`), appends the derived
+:class:`~graphed_orchestrator.IterationMetrics` (pass counts, a hash of the failing-test set,
+coverage numbers) to the history, runs the stall signals over that history, and returns a
+:class:`~graphed_orchestrator.Decision`: advance, continue, ``RETRY_L0``, ``ESCALATE_L1``,
+``PAUSE``, ``DISPUTE``, or ``QUARANTINE``. Every step is a pure function of the evidence and the
+record's prior state; the same inputs always yield the same decision — which is the property
+that makes the *process* auditable the same way the *code* is.
 
 Stall signals
 ~~~~~~~~~~~~~
@@ -126,20 +130,29 @@ shapes), downgraded to visible advisories, never silenced.
 A worked decision
 -----------------
 
-The flavor of the test suite, condensed::
+The flavor of the test suite, condensed — a faker whose ``pass_count`` never moves climbs the
+ladder one rung at a time::
 
-    from graphed_orchestrator import evaluate_iteration, Thresholds, Budget, Action
+    from graphed_orchestrator import Action, IterationEvidence, Orchestrator, Thresholds
 
-    # three iterations with the SAME failing-test hash -> the repeat-failure signal fires
-    history = [metrics(pass_count=40, fail_set_hash="abc")] * 3
-    decision = evaluate_iteration(evidence_with(history), thresholds=Thresholds(),
-                                  budget=Budget(l0_retries_left=1))
-    assert decision.action is Action.RETRY_L0          # first response: fresh context
+    o = Orchestrator("Mtest", thresholds=Thresholds(no_progress=3, r_retry=2))
+    # ... start() -> begin_test_authoring() -> run_test_sanity(...) -> freeze(...) -> IMPLEMENTING
 
-    # the same situation with the L0 budget spent escalates instead
-    decision = evaluate_iteration(evidence_with(history), thresholds=Thresholds(),
-                                  budget=Budget(l0_retries_left=0))
-    assert decision.action is Action.ESCALATE_L1
+    # six iterations, all stuck at the same pass_count: the no-progress signal fires from #3 on
+    actions = [
+        o.record_iteration(
+            IterationEvidence(iteration_index=i, pass_count=2, total_tests=5,
+                              source_tree_hash=f"t{i}", coverage_line=95, coverage_branch=95,
+                              lint_ok=True, types_ok=True, determinism_ok=True)
+        ).action
+        for i in range(6)
+    ]
+    assert actions == [
+        Action.CONTINUE, Action.CONTINUE,   # not enough history to call it stalled yet
+        Action.RETRY_L0, Action.RETRY_L0,   # L0: fresh context + notes (r_retry=2)
+        Action.ESCALATE_L1,                 # L1: stronger model, once L0 is spent
+        Action.PAUSE,                       # L2: the circuit breaker; human-only resume
+    ]
 
 Every branch of the policy is pinned this way — synthetic evidence in, asserted action out —
 including the ones that should be rare (integrity incidents, dispute filing, the breaker).

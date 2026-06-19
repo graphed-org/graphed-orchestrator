@@ -1,6 +1,6 @@
 """Durable state backing (plan B.4/B.7).
 
-Reads/writes the per-repo `.graphed/state.json` and appends to `.graphed/<Mx>/attempts.md` so the
+Reads/writes the per-repo ``.graphed/state.json`` and appends to ``.graphed/<Mx>/attempts.md`` so the
 orchestrator's decisions survive a context reset. JSON is written with sorted keys for
 byte-stable, diff-friendly output.
 """
@@ -49,7 +49,7 @@ def _metric_dict(m: IterationMetrics) -> dict[str, object]:
 
 
 def milestone_to_dict(rec: MilestoneRecord) -> dict[str, object]:
-    """Serialize a milestone record into the state.json `milestones[<id>]` shape."""
+    """Serialize a milestone record into the state.json ``milestones[<id>]`` shape."""
     latest = rec.gates[-1] if rec.gates else GateReport()
     return {
         "phase": rec.phase.value,
@@ -65,7 +65,7 @@ def milestone_to_dict(rec: MilestoneRecord) -> dict[str, object]:
 
 
 def write_state(path: Path, repo: str, records: list[MilestoneRecord]) -> None:
-    """Write a per-repo `.graphed/state.json` from milestone records."""
+    """Write a per-repo ``.graphed/state.json`` from milestone records."""
     payload = {
         "schema_version": 1,
         "repo": repo,

@@ -1,7 +1,7 @@
 """Deterministic metric derivation (plan B.4).
 
 Hashes are content-addressed and stable across runs so that two identical iterations produce
-identical `fail_set_hash`/`tree_hash` — the basis for the no-progress, repeat-failure, and
+identical ``fail_set_hash``/``tree_hash`` — the basis for the no-progress, repeat-failure, and
 oscillation signals.
 """
 

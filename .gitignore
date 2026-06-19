@@ -13,3 +13,4 @@ dist/
 build/
 _build/
 .DS_Store
+docs/generated/
