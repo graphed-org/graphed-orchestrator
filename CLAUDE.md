@@ -136,6 +136,7 @@ Two complementary tools confirm remote CI for exact pinned commits (never a bran
 
 `python -m graphed_orchestrator.precommit [REPO] [--fast] [--allow-refreeze PREFIX]` — run it in
 ANY graphed repo BEFORE every commit (this is the scripted form of the session discipline: TOML/
-YAML validity, ruff+format, mypy, full pytest with zero-collected=fail, sphinx -W, and the
-integrity scan incl. untracked files, with the modify-vs-new frozen distinction and a loud
-sanctioned-refreeze path). Exit 0 = commit allowed.
+YAML validity, lint+format+types via **prek** over the repo's `.pre-commit-config.yaml` (ruff +
+ruff-format + mypy — the same hooks CI runs, defined once instead of re-rolled here), full pytest
+with zero-collected=fail, sphinx -W, and the integrity scan incl. untracked files, with the
+modify-vs-new frozen distinction and a loud sanctioned-refreeze path). Exit 0 = commit allowed.

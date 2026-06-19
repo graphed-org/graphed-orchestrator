@@ -5,15 +5,32 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from graphed_orchestrator import precommit
 from graphed_orchestrator.precommit import (
     _ci_coverage_cmd,
+    _prek_cmd,
     check_coverage,
     check_integrity,
+    check_prek,
     check_pytest,
     check_toml,
     check_workflows,
     run_gate,
 )
+
+# A minimal local ruff hook — enough for prek to actually lint and reject bad code.
+PREK_RUFF_CONFIG = """\
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+"""
 
 
 def _git_repo(tmp_path: Path) -> Path:
@@ -98,7 +115,7 @@ def test_run_gate_reports_every_check_and_skips_are_explicit(tmp_path: Path) -> 
     results = {r.name: r for r in run_gate(repo, fast=True)}
     assert results["toml-valid"].status == "ok"
     assert results["workflows-valid"].status == "skipped"  # explicit, never silently dropped
-    assert "integrity-scan" in results and "ruff" in results
+    assert "integrity-scan" in results and "prek" in results
 
 
 def test_exclusions_downgrade_shape_findings_to_advisory(tmp_path: Path) -> None:
@@ -110,6 +127,94 @@ def test_exclusions_downgrade_shape_findings_to_advisory(tmp_path: Path) -> None
     result = check_integrity(repo)
     assert result.status == "ok"  # excluded -> not a hard failure
     assert "excluded:" in result.detail  # ... but VISIBLE, never silenced
+
+
+def test_check_integrity_keeps_paths_on_a_large_diff(tmp_path: Path) -> None:
+    # regression: the diff fed to the scanner must NOT be truncated. A >4000-char change ahead of
+    # an excluded file's `diff --git` header used to orphan the finding's path, so the exclusion
+    # match failed and an excluded skip became a false hard failure. Names are chosen so the
+    # excluded file sorts first (its header lands at the truncated-away start).
+    repo = _git_repo(tmp_path)
+    (repo / "pyproject.toml").write_text(
+        '[tool.graphed_precommit]\nintegrity_exclude = ["aaa_excluded.py"]\n'
+    )
+    (repo / "aaa_excluded.py").write_text("import pytest\n")
+    (repo / "zzz_big.py").write_text("".join(f"x{i} = {i}\n" for i in range(800)))
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "base"], check=True)
+    # a large change ahead of the excluded file, plus a skip injected into the excluded file
+    (repo / "zzz_big.py").write_text("".join(f"x{i} = {i + 1}\n" for i in range(800)))
+    (repo / "aaa_excluded.py").write_text("import pytest\n\n@pytest.mark.skip\ndef test_x():\n    pass\n")
+    result = check_integrity(repo)
+    assert result.status == "ok"  # path survived truncation -> exclusion matched -> advisory
+    assert "excluded:" in result.detail
+
+
+def test_check_prek_skipped_without_a_config(tmp_path: Path) -> None:
+    # nothing to delegate to -> explicit skip, never a silent pass
+    assert check_prek(_git_repo(tmp_path)).status == "skipped"
+
+
+def test_check_prek_fails_when_no_runner_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # config present but neither prek nor uv on PATH -> honest FAIL, not a skip that hides the gate
+    repo = _git_repo(tmp_path)
+    (repo / ".pre-commit-config.yaml").write_text(PREK_RUFF_CONFIG)
+    monkeypatch.setattr(precommit.shutil, "which", lambda _name: None)
+    result = check_prek(repo)
+    assert result.status == "FAIL"
+    assert "prek not found" in result.detail
+
+
+def test_check_prek_skips_only_mypy_when_types_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # --no-types must skip JUST mypy via SKIP, leaving ruff in force
+    repo = _git_repo(tmp_path)
+    (repo / ".pre-commit-config.yaml").write_text(PREK_RUFF_CONFIG)
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def fake_run(cmd: list[str], cwd: Path, *, env: dict[str, str] | None = None) -> tuple[int, str]:
+        calls.append((cmd, env))
+        return 0, ""
+
+    monkeypatch.setattr(precommit.shutil, "which", lambda name: "/bin/prek" if name == "prek" else None)
+    monkeypatch.setattr(precommit, "_run", fake_run)
+    result = check_prek(repo, types=False)
+    assert result.status == "ok"
+    cmd, env = calls[0]
+    assert cmd[:1] == ["prek"]
+    assert env is not None and "mypy" in env.get("SKIP", "")
+
+
+def test_prek_cmd_prefers_local_prek_then_falls_back_to_uv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(precommit.shutil, "which", lambda name: "/bin/prek" if name == "prek" else None)
+    assert _prek_cmd() == ["prek"]
+    monkeypatch.setattr(precommit.shutil, "which", lambda name: "/bin/uv" if name == "uv" else None)
+    assert _prek_cmd() == ["uv", "tool", "run", "prek"]
+    monkeypatch.setattr(precommit.shutil, "which", lambda _name: None)
+    assert _prek_cmd() is None
+
+
+def test_check_prek_reports_failure_from_a_nonzero_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _git_repo(tmp_path)
+    (repo / ".pre-commit-config.yaml").write_text(PREK_RUFF_CONFIG)
+    monkeypatch.setattr(precommit.shutil, "which", lambda name: "/bin/prek" if name == "prek" else None)
+    monkeypatch.setattr(precommit, "_run", lambda *a, **k: (1, "ruff check...Failed"))
+    result = check_prek(repo)
+    assert result.status == "FAIL"
+    assert "Failed" in result.detail
+
+
+@pytest.mark.skipif(_prek_cmd() is None, reason="prek/uv not installed in this environment")
+def test_check_prek_catches_a_real_lint_violation(tmp_path: Path) -> None:
+    # the end-to-end witness: prek actually runs ruff and rejects bad code
+    repo = _git_repo(tmp_path)
+    (repo / ".pre-commit-config.yaml").write_text(PREK_RUFF_CONFIG)
+    (repo / "bad.py").write_text("import os\n")  # F401: imported but unused
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    assert check_prek(repo).status == "FAIL"
 
 
 def _cov_workflow(repo: Path, cmd: str) -> None:

@@ -20,13 +20,19 @@ Usage::
     python -m graphed_orchestrator.precommit [REPO_DIR] [--no-docs] [--no-types] [--fast] [--no-coverage]
 
 Exit 0 only when every applicable check passes. Checks that do not apply to a repo (no
-``docs/``, no mypy config) are reported as skipped, never silently dropped.
+``docs/``, no ``.pre-commit-config.yaml``) are reported as skipped, never silently dropped.
+
+Linting and type-checking are delegated to ``prek`` over the repo's ``.pre-commit-config.yaml``
+(ruff lint + ruff format + mypy), the same hooks CI runs — so those commands are defined once,
+not re-rolled here as a separate ruff/mypy shell chain.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -43,9 +49,12 @@ class CheckResult:
     detail: str = ""
 
 
-def _run(cmd: list[str], cwd: Path) -> tuple[int, str]:
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
-    return proc.returncode, (proc.stdout + proc.stderr)[-4000:]
+def _run(
+    cmd: list[str], cwd: Path, *, env: dict[str, str] | None = None, max_chars: int | None = 4000
+) -> tuple[int, str]:
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
+    out = proc.stdout + proc.stderr
+    return proc.returncode, (out[-max_chars:] if max_chars else out)
 
 
 def check_toml(repo: Path) -> CheckResult:
@@ -85,7 +94,9 @@ def check_integrity(repo: Path, *, allow_refreeze: tuple[str, ...] = ()) -> Chec
     Brand-NEW files under ``tests/frozen/`` are the legitimate test-authoring deliverable and
     only advisory. The gate-gaming shapes (skip/xfail injections, tautologies, stubs) are hard
     failures wherever they appear in the new content."""
-    code, diff = _run(["git", "diff", "HEAD", "--", "."], repo)
+    # the FULL diff: truncating it drops `diff --git` headers, which breaks per-finding path
+    # attribution (and therefore the exclusion match), so a large diff could mis-grade a finding.
+    code, diff = _run(["git", "diff", "HEAD", "--", "."], repo, max_chars=None)
     if code != 0:
         return CheckResult("integrity-scan", "FAIL", "git diff failed (not a repo?)")
     code, changed = _run(["git", "diff", "HEAD", "--name-only", "--", "."], repo)
@@ -147,18 +158,33 @@ def _is_excluded(path: str, excluded: tuple[str, ...]) -> bool:
     return any(path == e or path.startswith(e.rstrip("/") + "/") for e in excluded)
 
 
-def check_ruff(repo: Path) -> CheckResult:
-    code1, out1 = _run([sys.executable, "-m", "ruff", "check", "."], repo)
-    code2, out2 = _run([sys.executable, "-m", "ruff", "format", "--check", "."], repo)
-    return CheckResult("ruff", "FAIL" if code1 or code2 else "ok", (out1 + out2).strip()[-300:])
+def _prek_cmd() -> list[str] | None:
+    """How to invoke prek: a directly-installed ``prek`` if on PATH (fast, no network), else
+    ``uv tool run prek`` (uv fetches it on demand). Returns ``None`` when neither is available, so
+    the caller reports an honest failure rather than silently skipping the lint/type gate."""
+    if shutil.which("prek"):
+        return ["prek"]
+    if shutil.which("uv"):
+        return ["uv", "tool", "run", "prek"]
+    return None
 
 
-def check_mypy(repo: Path) -> CheckResult:
-    cfg = repo / "pyproject.toml"
-    if not (cfg.is_file() and "[tool.mypy]" in cfg.read_text(encoding="utf-8")):
-        return CheckResult("mypy", "skipped", "no mypy config")
-    code, out = _run([sys.executable, "-m", "mypy"], repo)
-    return CheckResult("mypy", "FAIL" if code else "ok", out.strip()[-300:])
+def check_prek(repo: Path, *, types: bool = True) -> CheckResult:
+    """Run the repo's pre-commit hooks (ruff lint + ruff format + mypy) through prek. The lint/type
+    commands live in ``.pre-commit-config.yaml`` — the same hooks CI runs (``uvx prek``) and a
+    developer's ``prek install`` runs — so there is one source of truth instead of a hand-rolled
+    ruff/mypy chain duplicated here and in every workflow. ``types=False`` skips just the mypy hook
+    (``SKIP=mypy``), mirroring the old ``--no-types`` granularity without splitting the gate."""
+    if not (repo / ".pre-commit-config.yaml").is_file():
+        return CheckResult("prek", "skipped", "no .pre-commit-config.yaml")
+    cmd = _prek_cmd()
+    if cmd is None:
+        return CheckResult("prek", "FAIL", "prek not found (pip install prek, or install uv)")
+    env = dict(os.environ)
+    if not types:
+        env["SKIP"] = ",".join(filter(None, [env.get("SKIP"), "mypy"]))
+    code, out = _run([*cmd, "run", "--all-files", "--show-diff-on-failure"], repo, env=env)
+    return CheckResult("prek", "FAIL" if code else "ok", out.strip()[-300:])
 
 
 def check_pytest(repo: Path) -> CheckResult:
@@ -242,10 +268,8 @@ def run_gate(
         check_toml(repo),
         check_workflows(repo),
         check_integrity(repo, allow_refreeze=allow_refreeze),
-        check_ruff(repo),
+        check_prek(repo, types=types),
     ]
-    if types:
-        checks.append(check_mypy(repo))
     if not fast:
         # When CI has a coverage gate, run THAT command — it executes the gated suite AND enforces
         # >=90% in one pass, so we mirror CI exactly without running pytest twice. Otherwise (no CI
