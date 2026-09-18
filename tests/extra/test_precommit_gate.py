@@ -85,6 +85,32 @@ def test_a_brand_new_frozen_suite_is_advisory_not_a_failure(tmp_path: Path) -> N
     assert "new-frozen" in result.detail
 
 
+def test_a_staged_new_frozen_suite_is_new_not_modified(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    frozen = repo / "tests" / "frozen" / "m2"
+    frozen.mkdir(parents=True)
+    (frozen / "test_new.py").write_text("def test_new():\n    assert 2 == 1 + 1\n")
+    subprocess.run(["git", "-C", str(repo), "add", "tests"], check=True)
+    result = check_integrity(repo)
+    assert result.status == "ok"
+    assert "new-frozen:tests/frozen/m2/test_new.py" in result.detail
+    assert "frozen-modified" not in result.detail
+
+
+def test_a_staged_edit_of_a_committed_frozen_file_still_fails(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+    frozen = repo / "tests" / "frozen" / "m2"
+    frozen.mkdir(parents=True)
+    (frozen / "test_old.py").write_text("def test_old():\n    assert 2 == 1 + 1\n")
+    subprocess.run(["git", "-C", str(repo), "add", "tests"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "freeze"], check=True)
+    (frozen / "test_old.py").write_text("def test_old():\n    assert 3 == 1 + 2\n")
+    subprocess.run(["git", "-C", str(repo), "add", "tests"], check=True)
+    result = check_integrity(repo)
+    assert result.status == "FAIL"
+    assert "frozen-modified:tests/frozen/m2/test_old.py" in result.detail
+
+
 def test_skip_injection_in_new_content_fails(tmp_path: Path) -> None:
     repo = _git_repo(tmp_path)
     (repo / "test_sneaky.py").write_text(

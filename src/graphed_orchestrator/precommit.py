@@ -99,9 +99,11 @@ def check_integrity(repo: Path, *, allow_refreeze: tuple[str, ...] = ()) -> Chec
     code, diff = _run(["git", "diff", "HEAD", "--", "."], repo, max_chars=None)
     if code != 0:
         return CheckResult("integrity-scan", "FAIL", "git diff failed (not a repo?)")
-    code, changed = _run(["git", "diff", "HEAD", "--name-only", "--", "."], repo)
+    # lowercase `a` EXCLUDES additions: a staged-new file is new, exactly like an untracked one
+    code, changed = _run(["git", "diff", "HEAD", "--name-only", "--diff-filter=a", "--", "."], repo)
     code2, untracked = _run(["git", "ls-files", "--others", "--exclude-standard"], repo)
-    if code or code2:
+    code3, added = _run(["git", "diff", "HEAD", "--name-only", "--diff-filter=A", "--", "."], repo)
+    if code or code2 or code3:
         return CheckResult("integrity-scan", "FAIL", "git file listing failed")
     frozen_modified = [
         p for p in changed.splitlines() if any(p.startswith(pre) for pre in DEFAULT_PROTECTED_PREFIXES)
@@ -109,7 +111,9 @@ def check_integrity(repo: Path, *, allow_refreeze: tuple[str, ...] = ()) -> Chec
     refrozen = [p for p in frozen_modified if _is_excluded(p, allow_refreeze)]
     frozen_modified = [p for p in frozen_modified if not _is_excluded(p, allow_refreeze)]
     new_frozen = [
-        p for p in untracked.splitlines() if any(p.startswith(pre) for pre in DEFAULT_PROTECTED_PREFIXES)
+        p
+        for p in untracked.splitlines() + added.splitlines()
+        if any(p.startswith(pre) for pre in DEFAULT_PROTECTED_PREFIXES)
     ]
     # untracked files participate in the shape scan as pseudo-diffs of pure additions
     pseudo = []
