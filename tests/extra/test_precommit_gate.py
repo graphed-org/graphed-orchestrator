@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -294,6 +295,44 @@ def test_ci_coverage_cmd_skips_compound_shell_lines(tmp_path: Path) -> None:
     repo = _git_repo(tmp_path)
     _cov_workflow(repo, "cd sub && pytest --cov=pkg")  # a chained line isn't a clean argv -> skip it
     assert _ci_coverage_cmd(repo) is None
+
+
+def _runner_script_repo(tmp_path: Path) -> Path:
+    """CI runs a repo-local runner script, bare and with COV=1 inside a multi-line block (graphed)."""
+    repo = _git_repo(tmp_path)
+    _cov_workflow(repo, "./scripts/run-tests.sh")
+    with (repo / ".github" / "workflows" / "ci.yml").open("a") as f:
+        f.write(
+            "      - name: gate\n        run: |\n          echo \"don't ./x\n          COV=1 ./scripts/lint.sh\n"
+            "          COV=1 ./scripts/run-tests.sh\n          coverage json\n"
+        )
+    script = repo / "scripts" / "run-tests.sh"
+    script.parent.mkdir()
+    (repo / "scripts" / "lint.sh").write_text("#!/usr/bin/env bash\nruff check\n")  # runs no tests
+    script.write_text(
+        '#!/usr/bin/env bash\necho "COV=${COV:-0} args=$#" > ran.txt\n'
+        '[ "${COV:-0}" = 1 ] && echo python -m pytest --cov=pkg >/dev/null\necho "1 passed"\n'
+    )
+    script.chmod(0o755)
+    return repo
+
+
+def test_ci_coverage_cmd_is_ci_s_runner_script_with_its_variables(tmp_path: Path) -> None:
+    assert _ci_coverage_cmd(_runner_script_repo(tmp_path)) == ["env", "COV=1", "./scripts/run-tests.sh"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the runner script is bash")
+def test_check_pytest_runs_ci_s_runner_script_not_a_root_pytest(tmp_path: Path) -> None:
+    repo = _runner_script_repo(tmp_path)
+    assert check_pytest(repo).status == "ok"
+    assert (repo / "ran.txt").read_text().split() == ["COV=0", "args=0"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the runner script is bash")
+def test_check_coverage_runs_the_script_with_coverage_and_no_pytest_flags(tmp_path: Path) -> None:
+    repo = _runner_script_repo(tmp_path)
+    assert check_coverage(repo).status == "ok"
+    assert (repo / "ran.txt").read_text().split() == ["COV=1", "args=0"]
 
 
 def test_check_coverage_skipped_without_a_ci_gate(tmp_path: Path) -> None:

@@ -192,7 +192,8 @@ def check_prek(repo: Path, *, types: bool = True) -> CheckResult:
 
 
 def check_pytest(repo: Path) -> CheckResult:
-    code, out = _run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], repo)
+    cmd = _ci_script_cmd(repo, cov=False) or [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    code, out = _run(cmd, repo, env=_script_env())
     if code == 5:  # nothing collected: a vacuous "green" is a failure here
         return CheckResult("pytest", "FAIL", "no tests collected")
     return CheckResult(
@@ -209,9 +210,23 @@ def _ci_coverage_cmd(repo: Path) -> list[str] | None:
     ``cargo llvm-cov``, or the meta repo). Reading the workflow rather than hard-coding ``tests/frozen``
     is deliberate: repos differ (most gate the frozen suite only; the orchestrator gates the whole
     suite), and the workflow is the single source of truth for what CI will actually enforce."""
+    for line in _workflow_lines(repo):
+        if "pytest" not in line or "--cov" not in line:
+            continue
+        if any(sep in line for sep in ("&&", "|", ";")):
+            continue  # a compound shell line isn't a clean argv — skip rather than mis-split it
+        toks = shlex.split(line)
+        if "pytest" in toks:
+            return [sys.executable, "-m", *toks[toks.index("pytest") :]]
+    return _ci_script_cmd(repo, cov=True)
+
+
+def _workflow_lines(repo: Path) -> list[str]:
+    """Every line of the repo's CI workflows, stripped of the YAML list and ``run:`` prefixes."""
     wf = repo / ".github" / "workflows"
     if not wf.is_dir():
-        return None
+        return []
+    lines = []
     for path in sorted(wf.glob("*.yml")) + sorted(wf.glob("*.yaml")):
         for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
             line = raw.strip()
@@ -219,13 +234,38 @@ def _ci_coverage_cmd(repo: Path) -> list[str] | None:
                 line = line[2:].strip()
             if line.startswith("run:"):
                 line = line[4:].strip()
-            if "pytest" not in line or "--cov" not in line:
-                continue
-            if any(sep in line for sep in ("&&", "|", ";")):
-                continue  # a compound shell line isn't a clean argv — skip rather than mis-split it
+            lines.append(line)
+    return lines
+
+
+def _script_env() -> dict[str, str]:
+    """A runner script calls bare ``python``/``coverage``: resolve them in this interpreter's env."""
+    return {
+        **os.environ,
+        "PATH": os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")]),
+    }
+
+
+def _ci_script_cmd(repo: Path, *, cov: bool) -> list[str] | None:
+    """CI's own test-runner script (``[VAR=val ...] ./scripts/run-tests.sh``), for repos whose suites
+    cannot run as one root ``pytest`` (duplicate test basenames across subtrees). The coverage run is
+    the line that sets variables for a script passing ``--cov``; the plain run is the bare line."""
+    for line in _workflow_lines(repo):
+        if "./" not in line or any(sep in line for sep in ("&&", "|", ";")):
+            continue
+        try:
             toks = shlex.split(line)
-            if "pytest" in toks:
-                return [sys.executable, "-m", *toks[toks.index("pytest") :]]
+        except ValueError:  # e.g. an unbalanced quote in an echo line: not a runner invocation
+            continue
+        env = []
+        while toks and "=" in toks[0] and not toks[0].startswith(("./", "-")):
+            env.append(toks.pop(0))
+        if len(toks) != 1 or not toks[0].startswith("./") or bool(env) != cov:
+            continue
+        script = repo / toks[0]
+        text = script.read_text(encoding="utf-8", errors="replace") if script.is_file() else ""
+        if "pytest" in text and (not cov or "--cov" in text):
+            return ["env", *env, toks[0]] if env else [toks[0]]
     return None
 
 
@@ -237,7 +277,7 @@ def check_coverage(repo: Path, *, cmd: list[str] | None = None) -> CheckResult:
     cmd = cmd if cmd is not None else _ci_coverage_cmd(repo)
     if cmd is None:
         return CheckResult("coverage", "skipped", "no pytest --cov gate in CI")
-    code, out = _run([*cmd, "-p", "no:cacheprovider"], repo)
+    code, out = _run([*cmd, "-p", "no:cacheprovider"] if "pytest" in cmd else cmd, repo, env=_script_env())
     if code == 5:  # the gated suite collected nothing — a vacuous "100%" is still a failure
         return CheckResult("coverage", "FAIL", "no tests collected")
     lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
