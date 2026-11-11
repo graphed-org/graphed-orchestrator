@@ -18,8 +18,10 @@ DEFAULT_CONFIG_HINTS: tuple[str, ...] = (
     ".codecov.yml",
 )
 
+# a mark or call in code position, so prose naming one in a comment or docstring is not flagged
 _SKIP_MARKERS = re.compile(
-    r"@pytest\.mark\.(skip|xfail)|pytest\.skip\(|#\[ignore\]|#\s*\[ignore\]|\.skip\(|\bxfail\b"
+    r"\bmark\.(?:skip|skipif|xfail)(?=\s*$|[(),\]])|pytest\.skip\(|#\[ignore\]|#\s*\[ignore\]"
+    r"|\.skip\(|\bxfail\("
 )
 _TAUTOLOGY = re.compile(r"assert\s+(True|1\s*==\s*1|(\w+)\s*==\s*\2)\b")
 _STUB = re.compile(r"raise\s+NotImplementedError|todo!\(\)|unimplemented!\(\)")
