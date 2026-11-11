@@ -19,7 +19,7 @@ DEFAULT_CONFIG_HINTS: tuple[str, ...] = (
 )
 
 _SKIP_MARKERS = re.compile(
-    r"@pytest\.mark\.(skip|xfail)|pytest\.skip\(|#\[ignore\]|#\s*\[ignore\]|\.skip\(|\bxfail\b"
+    r"\bmark\.(skip|xfail)|pytest\.skip\(|#\[ignore\]|#\s*\[ignore\]|\.skip\(|\bxfail\b"
 )
 _TAUTOLOGY = re.compile(r"assert\s+(True|1\s*==\s*1|(\w+)\s*==\s*\2)\b")
 _STUB = re.compile(r"raise\s+NotImplementedError|todo!\(\)|unimplemented!\(\)")
